@@ -42,7 +42,7 @@ class block_greetings extends block_base {
      * @return stdClass The block contents.
      */
     public function get_content() {
-        global $CFG, $DB, $OUTPUT, $USER;
+        global $CFG, $DB, $OUTPUT, $USER, $PAGE;
 
         if ($this->content !== null) {
             return $this->content;
@@ -90,41 +90,40 @@ class block_greetings extends block_base {
                 }
             }
 
-            $messageform = new \block_greetings\form\message_form();
-
-            if ($data = $messageform->get_data()) {
-                require_capability('local/greetings:postmessages', $context);
-
-                $message = required_param('message', PARAM_TEXT);
-
-                if (!empty($message)) {
-                    $record = new stdClass;
-                    $record->message = $message;
-                    $record->timecreated = time();
-                    $record->userid = $USER->id;
-
-                    $DB->insert_record('block_greetings_messages', $record);
-
-                    redirect($CFG->wwwroot . '/my'); // Reload this page to load empty form.
-                }
-            }
+            $messageform = new \block_greetings\form\message_dynamic_form();
+            $messageform->set_data_for_dynamic_submission();
 
             if ($allowpost) {
-                $text .= $messageform->render();
+                $text .= html_writer::div($messageform->render(), '', ['data-region' => 'form', 'class' => 'w-50']);
+
+                $PAGE->requires->js_call_amd(
+                    'block_greetings/greetings',
+                    'fetchMessages',
+                    [$USER->id]
+                );
+                $PAGE->requires->js_call_amd(
+                    'block_greetings/greetings',
+                    'addMessage',
+                    ['[data-region=form]', \block_greetings\form\message_dynamic_form::class]
+                );
             }
+
+            $text .= html_writer::tag('div', '', ['id' => 'greeting-messages']);
+
+            $this->content->text = $text;
 
             if (has_capability('local/greetings:viewmessages', $context)) {
                 $userfields = \core_user\fields::for_name()->with_identity($context);
                 $userfieldssql = $userfields->get_sql('u');
 
-                $sql = "SELECT m.id, m.message, m.timecreated, m.userid {$userfieldssql->selects}
+                $sql = "SELECT m.id, m.message, m.timecreated, m.userid, u.firstname
                         FROM {block_greetings_messages} m
                         LEFT JOIN {user} u ON u.id = m.userid
                         ORDER BY timecreated DESC";
 
                 $messages = $DB->get_records_sql($sql);
 
-                $text .= $OUTPUT->box_start('card-columns');
+                $text .= $OUTPUT->box_start('card-columns', 'greeting-messages');
 
                 // Card background colour.
                 // Use value from block instance, if set. Otherwise use global value.
@@ -174,7 +173,7 @@ class block_greetings extends block_base {
                 $text .= $OUTPUT->box_end();
             }
 
-            $this->content->text = $text;
+            // $this->content->text = $text;
         }
 
         return $this->content;
